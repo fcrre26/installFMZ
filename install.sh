@@ -9,6 +9,9 @@ sudo apt install -y git docker.io docker-compose
 # 添加用户到docker组，以便无需sudo运行Docker命令
 sudo usermod -aG docker $USER
 
+# 等待docker组更改生效
+newgrp docker
+
 # 克隆vn.py仓库
 git clone https://github.com/vnpy/vnpy.git
 cd vnpy
@@ -44,5 +47,4 @@ docker run -d -p 8888:8888 vnpy
 sudo ufw allow 8888/tcp
 sudo ufw enable
 
-# 提示用户重启系统
-echo "部署完成！请手动重启系统以使docker组更改生效。"
+echo "部署完成！"
