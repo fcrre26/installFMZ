@@ -152,7 +152,11 @@ create_default_config() {
         "enabled": false
     },
     "api_server": {
-        "enabled": false
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "username": "freqtrade",
+        "password": "your_api_password"
     }
 }
 EOF
@@ -195,8 +199,8 @@ start_freqtrade() {
     
     # 检查配置文件存在性
     if [ ! -f user_data/config.json ]; then
-        echo -e "${RED}× 错误：未找到配置文件 user_data/config.json${NC}"
-        exit 1
+        echo -e "${YELLOW}⚠ 未找到配置文件，将创建默认配置...${NC}"
+        create_default_config
     fi
 
     ACTUAL_USER=$(who am i | awk '{print $1}')
