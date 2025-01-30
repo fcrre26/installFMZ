@@ -149,14 +149,16 @@ create_default_config() {
         "ccxt_async_config": {}
     },
     "telegram": {
-        "enabled": false
+        "enabled": false,
+        "token": "",
+        "chat_id": ""
     },
     "api_server": {
         "enabled": true,
         "listen_ip_address": "0.0.0.0",
         "listen_port": 8080,
         "username": "freqtrade",
-        "password": "your_api_password"
+        "password": "your_password"
     }
 }
 EOF
@@ -172,25 +174,111 @@ EOF
     fi
 }
 
-# 定义函数：手动编辑配置
+# 定义函数：交互式编辑配置
 edit_config() {
-    echo -e "${YELLOW}[5/6] 准备编辑配置文件...${NC}"
+    echo -e "${YELLOW}[5/6] 开始配置 Freqtrade...${NC}"
     
-    # 确保 nano 已安装
-    if ! command -v nano &> /dev/null; then
-        echo "正在安装 nano 编辑器..."
-        apt install -y nano
+    # 临时存储用户输入
+    local stake_currency
+    local stake_amount
+    local exchange_key
+    local exchange_secret
+    local telegram_token
+    local telegram_chat_id
+    local api_password
+    local dry_run
+
+    # 交互式配置
+    echo -e "\n${GREEN}=== 基础配置 ===${NC}"
+    read -p "交易币种 (默认: USDT): " stake_currency
+    stake_currency=${stake_currency:-USDT}
+    
+    read -p "每次交易金额 (默认: 100): " stake_amount
+    stake_amount=${stake_amount:-100}
+
+    echo -e "\n是否启用实盘交易? (y/n)"
+    read -p "默认为模拟交易模式 (n): " enable_live
+    if [[ $enable_live == "y" || $enable_live == "Y" ]]; then
+        dry_run="false"
+        echo -e "${YELLOW}警告：您已启用实盘交易模式！${NC}"
+    else
+        dry_run="true"
+        echo -e "${GREEN}已选择模拟交易模式${NC}"
     fi
-    
+
+    echo -e "\n${GREEN}=== 交易所配置 ===${NC}"
+    read -p "Binance API Key (必填): " exchange_key
+    while [[ -z "$exchange_key" ]]; do
+        echo -e "${RED}API Key 不能为空${NC}"
+        read -p "Binance API Key (必填): " exchange_key
+    done
+
+    read -p "Binance API Secret (必填): " exchange_secret
+    while [[ -z "$exchange_secret" ]]; do
+        echo -e "${RED}API Secret 不能为空${NC}"
+        read -p "Binance API Secret (必填): " exchange_secret
+    done
+
+    echo -e "\n${GREEN}=== Telegram 配置 ===${NC}"
+    echo "是否启用 Telegram 通知? (y/n)"
+    read -p "默认: n: " enable_telegram
+    if [[ $enable_telegram == "y" || $enable_telegram == "Y" ]]; then
+        read -p "Telegram Bot Token: " telegram_token
+        while [[ -z "$telegram_token" ]]; do
+            echo -e "${RED}Bot Token 不能为空${NC}"
+            read -p "Telegram Bot Token: " telegram_token
+        done
+
+        read -p "Telegram Chat ID: " telegram_chat_id
+        while [[ -z "$telegram_chat_id" ]]; do
+            echo -e "${RED}Chat ID 不能为空${NC}"
+            read -p "Telegram Chat ID: " telegram_chat_id
+        done
+    fi
+
+    echo -e "\n${GREEN}=== Web UI 配置 ===${NC}"
+    read -p "Web UI 密码 (默认: your_password): " api_password
+    api_password=${api_password:-your_password}
+
+    # 创建新的配置文件
+    cat > user_data/config.json << EOF
+{
+    "max_open_trades": 3,
+    "stake_currency": "${stake_currency}",
+    "stake_amount": ${stake_amount},
+    "fiat_display_currency": "USD",
+    "dry_run": ${dry_run},
+    "timeframe": "5m",
+    "exchange": {
+        "name": "binance",
+        "key": "${exchange_key}",
+        "secret": "${exchange_secret}",
+        "ccxt_config": {},
+        "ccxt_async_config": {}
+    },
+    "telegram": {
+        "enabled": $([[ $enable_telegram == "y" || $enable_telegram == "Y" ]] && echo "true" || echo "false"),
+        "token": "${telegram_token:-}",
+        "chat_id": "${telegram_chat_id:-}"
+    },
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "username": "freqtrade",
+        "password": "${api_password}"
+    }
+}
+EOF
+
     ACTUAL_USER=$(who am i | awk '{print $1}')
     if [ -z "$ACTUAL_USER" ]; then
         ACTUAL_USER=$(logname)
     fi
-    
-    echo "打开编辑器..."
-    # 使用实际用户编辑文件
-    sudo -u $ACTUAL_USER nano user_data/config.json
-    echo -e "${GREEN}✓ 配置文件编辑完成${NC}"
+    chown $ACTUAL_USER:$ACTUAL_USER user_data/config.json
+
+    echo -e "${GREEN}✓ 配置文件已更新${NC}"
+    echo -e "${YELLOW}提示：配置文件保存在 user_data/config.json${NC}"
 }
 
 # 定义函数：启动容器
@@ -237,7 +325,7 @@ start_freqtrade() {
 show_menu() {
     echo -e "\n${YELLOW}请选择配置方式：${NC}"
     echo "1) 自动生成配置文件 (推荐新手)"
-    echo "2) 手动编辑配置文件 (推荐有经验用户)"
+    echo "2) 交互式配置 (推荐有经验用户)"
     echo "3) 跳过配置 (使用现有配置)"
     echo "4) 退出"
     
