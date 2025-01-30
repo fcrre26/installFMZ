@@ -356,6 +356,42 @@ show_menu() {
     done
 }
 
+# 定义函数：配置防火墙
+configure_firewall() {
+    echo -e "${YELLOW}正在配置防火墙...${NC}"
+    
+    # 检查 ufw 是否安装
+    if ! command -v ufw &> /dev/null; then
+        echo "安装 ufw 防火墙..."
+        apt install -y ufw
+    fi
+
+    # 检查防火墙状态
+    if ! ufw status | grep -q "Status: active"; then
+        echo "启用防火墙..."
+        ufw --force enable
+    fi
+
+    echo "配置防火墙规则..."
+    # 允许 SSH（防止被锁在系统外）
+    ufw allow 22/tcp
+    
+    # 允许 Freqtrade Web UI
+    ufw allow 8080/tcp
+    
+    echo "更新防火墙规则..."
+    ufw reload
+
+    echo -e "${GREEN}✓ 防火墙配置完成${NC}"
+    echo "已开放端口："
+    echo "- 22 (SSH)"
+    echo "- 8080 (Freqtrade Web UI)"
+    
+    # 显示防火墙状态
+    ufw status numbered
+}
+
+
 # 主程序
 main() {
     clear
@@ -373,6 +409,7 @@ main() {
     install_docker
     create_data_directory
     download_docker_compose
+    configure_firewall    # 添加这一行
     show_menu
     start_freqtrade
 }
