@@ -85,6 +85,7 @@ create_data_directory() {
     chown -R $ACTUAL_USER:$ACTUAL_USER $FREQTRADE_DIR
     cd $FREQTRADE_DIR || exit 1
 }
+
 # 定义函数：下载 Docker 配置文件
 download_docker_compose() {
     echo -e "${YELLOW}[3/6] 下载 Docker 配置文件...${NC}"
@@ -158,6 +159,7 @@ edit_config() {
     sudo -u $ACTUAL_USER nano user_data/config.json
     echo -e "${GREEN}✓ 配置文件编辑完成${NC}"
 }
+
 # 定义函数：启动容器
 start_freqtrade() {
     echo -e "${YELLOW}[6/6] 启动 Freqtrade 容器...${NC}"
