@@ -17,6 +17,27 @@ check_root() {
     fi
 }
 
+# 检查系统兼容性
+check_system_compatibility() {
+    if ! grep -q "Ubuntu" /etc/os-release; then
+        echo -e "${RED}错误：本脚本仅支持 Ubuntu 系统${NC}"
+        exit 1
+    fi
+    
+    VERSION=$(lsb_release -rs)
+    if [[ "$VERSION" != "20.04" && "$VERSION" != "22.04" ]]; then
+        echo -e "${YELLOW}警告：未经测试的 Ubuntu 版本${NC}"
+    fi
+}
+
+# 检查网络连接
+check_network() {
+    if ! ping -c 1 github.com &> /dev/null; then
+        echo -e "${RED}错误：无法连接到 GitHub，请检查网络连接${NC}"
+        exit 1
+    fi
+}
+
 # 定义函数：安装 Docker 和 Docker Compose
 install_docker() {
     echo -e "${YELLOW}[1/6] 正在安装 Docker 和 Docker Compose...${NC}"
@@ -33,7 +54,7 @@ install_docker() {
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - > /dev/null 2>&1
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /dev/null 2>&1
     apt update > /dev/null 2>&1
-    apt install -y docker-ce > /dev/null 2>&1
+    apt install -y docker-ce docker-ce-cli containerd.io > /dev/null 2>&1
 
     # 获取实际运行脚本的用户
     ACTUAL_USER=$(who am i | awk '{print $1}')
@@ -64,7 +85,6 @@ create_data_directory() {
     chown -R $ACTUAL_USER:$ACTUAL_USER $FREQTRADE_DIR
     cd $FREQTRADE_DIR || exit 1
 }
-
 # 定义函数：下载 Docker 配置文件
 download_docker_compose() {
     echo -e "${YELLOW}[3/6] 下载 Docker 配置文件...${NC}"
@@ -84,7 +104,7 @@ download_docker_compose() {
 create_default_config() {
     echo -e "${YELLOW}[4/6] 生成默认配置文件...${NC}"
     if [ ! -f user_data/config.json ]; then
-        cat <<EOF > user_data/config.json
+        cat > user_data/config.json << 'EOF'
 {
     "max_open_trades": 3,
     "stake_currency": "USDT",
@@ -107,6 +127,7 @@ create_default_config() {
     }
 }
 EOF
+
         ACTUAL_USER=$(who am i | awk '{print $1}')
         if [ -z "$ACTUAL_USER" ]; then
             ACTUAL_USER=$(logname)
@@ -137,7 +158,6 @@ edit_config() {
     sudo -u $ACTUAL_USER nano user_data/config.json
     echo -e "${GREEN}✓ 配置文件编辑完成${NC}"
 }
-
 # 定义函数：启动容器
 start_freqtrade() {
     echo -e "${YELLOW}[6/6] 启动 Freqtrade 容器...${NC}"
@@ -146,7 +166,7 @@ start_freqtrade() {
     if [ ! -f user_data/config.json ]; then
         echo -e "${RED}× 错误：未找到配置文件 user_data/config.json${NC}"
         exit 1
-    }
+    fi
 
     ACTUAL_USER=$(who am i | awk '{print $1}')
     if [ -z "$ACTUAL_USER" ]; then
@@ -204,27 +224,6 @@ show_menu() {
                 ;;
         esac
     done
-}
-
-# 检查系统兼容性
-check_system_compatibility() {
-    if ! grep -q "Ubuntu" /etc/os-release; then
-        echo -e "${RED}错误：本脚本仅支持 Ubuntu 系统${NC}"
-        exit 1
-    }
-    
-    VERSION=$(lsb_release -rs)
-    if [[ "$VERSION" != "20.04" && "$VERSION" != "22.04" ]]; then
-        echo -e "${YELLOW}警告：未经测试的 Ubuntu 版本${NC}"
-    }
-}
-
-# 检查网络连接
-check_network() {
-    if ! ping -c 1 github.com &> /dev/null; then
-        echo -e "${RED}错误：无法连接到 GitHub，请检查网络连接${NC}"
-        exit 1
-    }
 }
 
 # 主程序
