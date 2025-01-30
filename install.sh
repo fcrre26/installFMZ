@@ -9,39 +9,60 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # 恢复默认颜色
 
+# 检查 root 权限
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}错误：请使用 root 权限运行本脚本 (使用 sudo ./install.sh)${NC}"
+        exit 1
+    fi
+}
+
 # 定义函数：安装 Docker 和 Docker Compose
 install_docker() {
     echo -e "${YELLOW}[1/6] 正在安装 Docker 和 Docker Compose...${NC}"
     
     # 安装 Docker
-    sudo apt update > /dev/null 2>&1
-    sudo apt install -y \
+    apt update > /dev/null 2>&1
+    apt install -y \
         apt-transport-https \
         ca-certificates \
         curl \
         gnupg-agent \
         software-properties-common > /dev/null 2>&1
 
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add - > /dev/null 2>&1
-    sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /dev/null 2>&1
-    sudo apt update > /dev/null 2>&1
-    sudo apt install -y docker-ce > /dev/null 2>&1
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - > /dev/null 2>&1
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /dev/null 2>&1
+    apt update > /dev/null 2>&1
+    apt install -y docker-ce > /dev/null 2>&1
+
+    # 获取实际运行脚本的用户
+    ACTUAL_USER=$(who am i | awk '{print $1}')
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(logname)
+    fi
 
     # 添加用户到 docker 组
-    sudo usermod -aG docker $USER
-    echo -e "${GREEN}✓ 已添加当前用户到 docker 组，需要重新登录后生效${NC}"
+    usermod -aG docker $ACTUAL_USER
+    echo -e "${GREEN}✓ 已添加用户 $ACTUAL_USER 到 docker 组，需要重新登录后生效${NC}"
 
     # 安装 Docker Compose
-    sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
+    curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
         -o /usr/local/bin/docker-compose > /dev/null 2>&1
-    sudo chmod +x /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
 }
 
 # 定义函数：创建 Freqtrade 数据目录
 create_data_directory() {
     echo -e "${YELLOW}[2/6] 创建数据目录...${NC}"
-    mkdir -p ~/freqtrade/user_data
-    cd ~/freqtrade || exit 1
+    ACTUAL_USER=$(who am i | awk '{print $1}')
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(logname)
+    fi
+    
+    FREQTRADE_DIR="/home/$ACTUAL_USER/freqtrade"
+    mkdir -p $FREQTRADE_DIR/user_data
+    chown -R $ACTUAL_USER:$ACTUAL_USER $FREQTRADE_DIR
+    cd $FREQTRADE_DIR || exit 1
 }
 
 # 定义函数：下载 Docker 配置文件
@@ -51,6 +72,12 @@ download_docker_compose() {
         echo -e "${RED}× 无法下载 docker-compose.yml 文件${NC}"
         exit 1
     fi
+    
+    ACTUAL_USER=$(who am i | awk '{print $1}')
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(logname)
+    fi
+    chown $ACTUAL_USER:$ACTUAL_USER docker-compose.yml
 }
 
 # 定义函数：创建默认配置文件
@@ -80,6 +107,11 @@ create_default_config() {
     }
 }
 EOF
+        ACTUAL_USER=$(who am i | awk '{print $1}')
+        if [ -z "$ACTUAL_USER" ]; then
+            ACTUAL_USER=$(logname)
+        fi
+        chown $ACTUAL_USER:$ACTUAL_USER user_data/config.json
         echo -e "${GREEN}✓ 配置文件已创建 (user_data/config.json)${NC}"
     else
         echo -e "${YELLOW}⚠ 配置文件已存在，跳过创建${NC}"
@@ -93,10 +125,16 @@ edit_config() {
     # 确保 nano 已安装
     if ! command -v nano &> /dev/null; then
         echo "正在安装 nano 编辑器..."
-        sudo apt install -y nano > /dev/null 2>&1
+        apt install -y nano > /dev/null 2>&1
     fi
     
-    nano user_data/config.json
+    ACTUAL_USER=$(who am i | awk '{print $1}')
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(logname)
+    fi
+    
+    # 使用实际用户编辑文件
+    sudo -u $ACTUAL_USER nano user_data/config.json
     echo -e "${GREEN}✓ 配置文件编辑完成${NC}"
 }
 
@@ -108,9 +146,15 @@ start_freqtrade() {
     if [ ! -f user_data/config.json ]; then
         echo -e "${RED}× 错误：未找到配置文件 user_data/config.json${NC}"
         exit 1
-    fi
+    }
 
-    docker-compose up -d
+    ACTUAL_USER=$(who am i | awk '{print $1}')
+    if [ -z "$ACTUAL_USER" ]; then
+        ACTUAL_USER=$(logname)
+    fi
+    
+    # 使用实际用户启动 docker-compose
+    sudo -u $ACTUAL_USER docker-compose up -d
     
     # 显示访问信息
     echo -e "\n${GREEN}启动成功！请按以下步骤操作：${NC}"
@@ -162,6 +206,27 @@ show_menu() {
     done
 }
 
+# 检查系统兼容性
+check_system_compatibility() {
+    if ! grep -q "Ubuntu" /etc/os-release; then
+        echo -e "${RED}错误：本脚本仅支持 Ubuntu 系统${NC}"
+        exit 1
+    }
+    
+    VERSION=$(lsb_release -rs)
+    if [[ "$VERSION" != "20.04" && "$VERSION" != "22.04" ]]; then
+        echo -e "${YELLOW}警告：未经测试的 Ubuntu 版本${NC}"
+    }
+}
+
+# 检查网络连接
+check_network() {
+    if ! ping -c 1 github.com &> /dev/null; then
+        echo -e "${RED}错误：无法连接到 GitHub，请检查网络连接${NC}"
+        exit 1
+    }
+}
+
 # 主程序
 main() {
     clear
@@ -172,11 +237,9 @@ main() {
     echo "--------------------------------------------------"
     echo -e "${NC}"
     
-    # 检查 root 权限
-    if [ "$EUID" -eq 0 ]; then
-        echo -e "${RED}错误：请勿使用 root 用户运行本脚本${NC}"
-        exit 1
-    fi
+    check_root
+    check_system_compatibility
+    check_network
     
     install_docker
     create_data_directory
