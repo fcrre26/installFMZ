@@ -19,6 +19,7 @@ check_root() {
 
 # 检查系统兼容性
 check_system_compatibility() {
+    echo -e "${YELLOW}正在检查系统兼容性...${NC}"
     if ! grep -q "Ubuntu" /etc/os-release; then
         echo -e "${RED}错误：本脚本仅支持 Ubuntu 系统${NC}"
         exit 1
@@ -28,14 +29,18 @@ check_system_compatibility() {
     if [[ "$VERSION" != "20.04" && "$VERSION" != "22.04" ]]; then
         echo -e "${YELLOW}警告：未经测试的 Ubuntu 版本${NC}"
     fi
+    echo -e "${GREEN}✓ 系统兼容性检查通过${NC}"
 }
 
 # 检查网络连接
 check_network() {
-    if ! ping -c 1 github.com &> /dev/null; then
+    echo -e "${YELLOW}正在检查网络连接...${NC}"
+    echo "测试与 github.com 的连接..."
+    if ! ping -c 1 github.com; then
         echo -e "${RED}错误：无法连接到 GitHub，请检查网络连接${NC}"
         exit 1
     fi
+    echo -e "${GREEN}✓ 网络连接正常${NC}"
 }
 
 # 定义函数：安装 Docker 和 Docker Compose
@@ -43,18 +48,24 @@ install_docker() {
     echo -e "${YELLOW}[1/6] 正在安装 Docker 和 Docker Compose...${NC}"
     
     # 安装 Docker
-    apt update > /dev/null 2>&1
+    echo -e "${GREEN}[1/5] 更新软件包列表...${NC}"
+    apt update
+    
+    echo -e "${GREEN}[2/5] 安装 Docker 依赖包...${NC}"
     apt install -y \
         apt-transport-https \
         ca-certificates \
         curl \
         gnupg-agent \
-        software-properties-common > /dev/null 2>&1
+        software-properties-common
 
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - > /dev/null 2>&1
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /dev/null 2>&1
-    apt update > /dev/null 2>&1
-    apt install -y docker-ce docker-ce-cli containerd.io > /dev/null 2>&1
+    echo -e "${GREEN}[3/5] 添加 Docker 官方 GPG 密钥和软件源...${NC}"
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    
+    echo -e "${GREEN}[4/5] 安装 Docker...${NC}"
+    apt update
+    apt install -y docker-ce docker-ce-cli containerd.io
 
     # 获取实际运行脚本的用户
     ACTUAL_USER=$(who am i | awk '{print $1}')
@@ -66,10 +77,19 @@ install_docker() {
     usermod -aG docker $ACTUAL_USER
     echo -e "${GREEN}✓ 已添加用户 $ACTUAL_USER 到 docker 组，需要重新登录后生效${NC}"
 
+    echo -e "${GREEN}[5/5] 安装 Docker Compose...${NC}"
     # 安装 Docker Compose
+    echo "下载 Docker Compose ${DOCKER_COMPOSE_VERSION}..."
     curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
-        -o /usr/local/bin/docker-compose > /dev/null 2>&1
+        -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
+    
+    # 验证安装
+    echo -e "${GREEN}验证安装...${NC}"
+    docker --version
+    docker-compose --version
+    
+    echo -e "${GREEN}✓ Docker 和 Docker Compose 安装完成${NC}"
 }
 
 # 定义函数：创建 Freqtrade 数据目录
@@ -80,16 +100,22 @@ create_data_directory() {
         ACTUAL_USER=$(logname)
     fi
     
+    echo "创建目录: /home/$ACTUAL_USER/freqtrade"
     FREQTRADE_DIR="/home/$ACTUAL_USER/freqtrade"
     mkdir -p $FREQTRADE_DIR/user_data
     chown -R $ACTUAL_USER:$ACTUAL_USER $FREQTRADE_DIR
+    echo -e "${GREEN}✓ 目录创建完成${NC}"
+    
+    echo "切换到工作目录..."
     cd $FREQTRADE_DIR || exit 1
+    echo -e "${GREEN}✓ 目录准备完成${NC}"
 }
 
 # 定义函数：下载 Docker 配置文件
 download_docker_compose() {
     echo -e "${YELLOW}[3/6] 下载 Docker 配置文件...${NC}"
-    if ! wget -q -O docker-compose.yml https://raw.githubusercontent.com/freqtrade/freqtrade/stable/docker-compose.yml; then
+    echo "从 GitHub 下载 docker-compose.yml..."
+    if ! wget -O docker-compose.yml https://raw.githubusercontent.com/freqtrade/freqtrade/stable/docker-compose.yml; then
         echo -e "${RED}× 无法下载 docker-compose.yml 文件${NC}"
         exit 1
     fi
@@ -99,12 +125,14 @@ download_docker_compose() {
         ACTUAL_USER=$(logname)
     fi
     chown $ACTUAL_USER:$ACTUAL_USER docker-compose.yml
+    echo -e "${GREEN}✓ 配置文件下载完成${NC}"
 }
 
 # 定义函数：创建默认配置文件
 create_default_config() {
     echo -e "${YELLOW}[4/6] 生成默认配置文件...${NC}"
     if [ ! -f user_data/config.json ]; then
+        echo "创建新的配置文件..."
         cat > user_data/config.json << 'EOF'
 {
     "max_open_trades": 3,
@@ -147,7 +175,7 @@ edit_config() {
     # 确保 nano 已安装
     if ! command -v nano &> /dev/null; then
         echo "正在安装 nano 编辑器..."
-        apt install -y nano > /dev/null 2>&1
+        apt install -y nano
     fi
     
     ACTUAL_USER=$(who am i | awk '{print $1}')
@@ -155,6 +183,7 @@ edit_config() {
         ACTUAL_USER=$(logname)
     fi
     
+    echo "打开编辑器..."
     # 使用实际用户编辑文件
     sudo -u $ACTUAL_USER nano user_data/config.json
     echo -e "${GREEN}✓ 配置文件编辑完成${NC}"
@@ -175,8 +204,15 @@ start_freqtrade() {
         ACTUAL_USER=$(logname)
     fi
     
+    echo "启动 Docker 容器..."
     # 使用实际用户启动 docker-compose
     sudo -u $ACTUAL_USER docker-compose up -d
+    
+    echo "等待容器启动..."
+    sleep 5
+    
+    echo "检查容器状态..."
+    docker-compose ps
     
     # 显示访问信息
     echo -e "\n${GREEN}启动成功！请按以下步骤操作：${NC}"
