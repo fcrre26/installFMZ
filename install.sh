@@ -61,39 +61,10 @@ function updateenv() {
     REQUIREMENTS_FREQAI_RL=""
     REQUIREMENTS=requirements.txt
 
-    read -p "是否安装开发依赖（将进行完整安装，包含所有依赖）[y/N]？"
-    dev=$REPLY
-    if [[ $REPLY =~ ^[Yy]$ ]]
-    then
-        REQUIREMENTS=requirements-dev.txt
-    else
-        read -p "是否安装绘图依赖（plotly）[y/N]？"
-        if [[ $REPLY =~ ^[Yy]$ ]]
-        then
-            REQUIREMENTS_PLOT="-r requirements-plot.txt"
-        fi
-        if [ "${SYS_ARCH}" == "armv7l" ] || [ "${SYS_ARCH}" == "armv6l" ]; then
-            echo "检测到树莓派，正在安装 cython，跳过 hyperopt 安装。"
-            ${PYTHON} -m pip install --upgrade cython
-        else
-            read -p "是否安装 hyperopt 依赖 [y/N]？"
-            if [[ $REPLY =~ ^[Yy]$ ]]
-            then
-                REQUIREMENTS_HYPEROPT="-r requirements-hyperopt.txt"
-            fi
-        fi
+    # 自动选择完整安装
+    echo "选择完整安装（包含所有依赖）"
+    REQUIREMENTS=requirements-dev.txt
 
-        read -p "是否安装 freqai 依赖 [y/N]？"
-        if [[ $REPLY =~ ^[Yy]$ ]]
-        then
-            REQUIREMENTS_FREQAI="-r requirements-freqai.txt --use-pep517"
-            read -p "是否同时安装 freqai-rl 或 PyTorch 依赖（需要额外约 700MB 空间）[y/N]？"
-            if [[ $REPLY =~ ^[Yy]$ ]]
-            then
-                REQUIREMENTS_FREQAI="-r requirements-freqai-rl.txt"
-            fi
-        fi
-    fi
     install_talib
 
     ${PYTHON} -m pip install --upgrade -r ${REQUIREMENTS} ${REQUIREMENTS_HYPEROPT} ${REQUIREMENTS_PLOT} ${REQUIREMENTS_FREQAI} ${REQUIREMENTS_FREQAI_RL}
@@ -112,12 +83,12 @@ function updateenv() {
 
     echo "pip 安装完成"
     echo
-    if [[ $dev =~ ^[Yy]$ ]]; then
-        ${PYTHON} -m pre_commit install
-        if [ $? -ne 0 ]; then
-            echo "安装 pre-commit 失败"
-            exit 1
-        fi
+    
+    # 自动安装 pre-commit
+    ${PYTHON} -m pre_commit install
+    if [ $? -ne 0 ]; then
+        echo "安装 pre-commit 失败"
+        exit 1
     fi
 }
 
@@ -306,6 +277,63 @@ function check_freqtrade_dir() {
     return 0
 }
 
+function generate_config() {
+    echo_block "生成配置文件"
+    read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+    config_path=${config_path:-user_data/config.json}
+    
+    echo "请回答以下问题来生成配置文件："
+    
+    # 交易所选择
+    echo -e "\n${GREEN}支持的交易所:${NC}"
+    echo "1) Binance (推荐)"
+    echo "2) Huobi"
+    echo "3) OKX"
+    echo "4) 其他"
+    read -p "请选择交易所 [1]: " exchange_choice
+    case $exchange_choice in
+        2) exchange="huobi";;
+        3) exchange="okx";;
+        4) 
+            read -p "请输入交易所名称: " exchange
+            ;;
+        *) exchange="binance";;
+    esac
+    
+    # 交易对
+    read -p "请输入交易对(例如: BTC/USDT ETH/USDT) [BTC/USDT]: " pairs
+    pairs=${pairs:-"BTC/USDT"}
+    
+    # 策略选择
+    echo -e "\n${GREEN}常用策略:${NC}"
+    echo "1) SampleStrategy (样例策略)"
+    echo "2) 自定义策略"
+    read -p "请选择策略 [1]: " strategy_choice
+    if [ "$strategy_choice" = "2" ]; then
+        read -p "请输入策略类名: " strategy
+    else
+        strategy="SampleStrategy"
+    fi
+    
+    # 生成基础配置
+    freqtrade new-config \
+        --config "$config_path" \
+        -e "$exchange" \
+        --pairs "$pairs" \
+        --strategy "$strategy"
+    
+    echo -e "\n${GREEN}配置文件已生成: $config_path${NC}"
+    echo "您可以手动编辑此文件来调整更多设置:"
+    echo "- stake_amount: 每次交易金额"
+    echo "- max_open_trades: 最大同时开仓数"
+    echo "- minimal_roi: 最小利润率设置"
+    echo "- stoploss: 止损设置"
+    echo "- dry_run: 模拟交易模式"
+    echo "- exchange.key: API密钥"
+    echo "- exchange.secret: API密钥"
+    echo "- telegram: 电报机器人设置"
+}
+
 function show_run_menu() {
     clear
     echo_block "Freqtrade 运行命令菜单"
@@ -360,10 +388,7 @@ function show_run_menu() {
             show_run_menu
             ;;
         3)
-            echo_block "生成配置文件"
-            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
-            config_path=${config_path:-user_data/config.json}
-            freqtrade new-config -c "$config_path"
+            generate_config
             read -p "按回车键继续..."
             show_run_menu
             ;;
