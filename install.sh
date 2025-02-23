@@ -458,6 +458,18 @@ function generate_random_password() {
 function start_webui() {
     echo_block "启动网页界面"
     
+    # 自动配置防火墙（不需要确认）
+    echo "正在配置防火墙..."
+    if [ "$EUID" -eq 0 ]; then
+        if command -v ufw >/dev/null 2>&1; then
+            ufw allow 8080/tcp >/dev/null 2>&1
+            ufw reload >/dev/null 2>&1
+            echo -e "${GREEN}端口 8080 已自动开放${NC}"
+        fi
+    else
+        echo -e "${YELLOW}提示: 需要 root 权限来配置防火墙${NC}"
+    fi
+
     # 检查并切换到 freqtrade 目录
     if [ ! -d "freqtrade" ] && [ "$(basename $PWD)" != "freqtrade" ]; then
         echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
@@ -606,7 +618,14 @@ EOF
         echo -e "${GREEN}已保存的登录信息${NC}"
         echo "=========================================="
         if [ -f "user_data/login_info.txt" ]; then
-            cat user_data/login_info.txt
+            echo
+            echo "=========================================="
+            echo -e "${GREEN}登录信息${NC}"
+            echo "=========================================="
+            echo -e "${YELLOW}访问地址: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
+            cat user_data/login_info.txt | grep -v "========="
+            echo "=========================================="
+            echo
         else
             echo -e "${RED}登录信息文件未找到！${NC}"
             echo -e "${YELLOW}用户名和密码在 config.json 文件中${NC}"
@@ -615,7 +634,7 @@ EOF
         echo
     fi
 
-    # 启动 UI
+    # 启动 UI（删除端口确认步骤）
     echo -e "${GREEN}正在启动 Web UI...${NC}"
     echo -e "请在浏览器中访问: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
     python3 -m freqtrade trade \
