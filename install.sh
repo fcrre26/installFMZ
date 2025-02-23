@@ -290,7 +290,7 @@ function generate_config() {
     if [ ! -f "$config_path" ]; then
         echo -e "${RED}错误: 配置文件生成失败${NC}"
         return
-    }
+    fi
     
     # 交易所选择
     echo -e "\n${GREEN}支持的交易所:${NC}"
