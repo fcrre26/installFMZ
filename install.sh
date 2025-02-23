@@ -470,6 +470,21 @@ function generate_config() {
         "30": 0.02,
         "0": 0.04
     },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "strategy": "$strategy",
     "exchange": {
         "name": "$exchange",
         "key": "$api_key",
@@ -477,7 +492,11 @@ function generate_config() {
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
-            $(echo "$pairs" | tr ' ' '\n' | sed 's/.*/"&",/' | sed '$s/,$//')
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "ADA/USDT",
+            "XRP/USDT"
         ],
         "pair_blacklist": []
     },
@@ -485,10 +504,34 @@ function generate_config() {
         {
             "method": "StaticPairList",
             "pairs": [
-                $(echo "$pairs" | tr ' ' '\n' | sed 's/.*/"&",/' | sed '$s/,$//')
+                "BTC/USDT",
+                "ETH/USDT",
+                "BNB/USDT",
+                "ADA/USDT",
+                "XRP/USDT"
             ]
         }
     ],
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "force_entry": "market",
+        "force_exit": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": false
+    },
+    "order_time_in_force": {
+        "entry": "GTC",
+        "exit": "GTC"
+    },
+    "bot_name": "freqtrade",
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
     "api_server": {
         "enabled": true,
         "listen_ip_address": "0.0.0.0",
@@ -499,6 +542,9 @@ function generate_config() {
         "CORS_origins": [],
         "username": "$username",
         "password": "$password"
+    },
+    "internals": {
+        "process_throttle_secs": 5
     }
 }
 EOF
