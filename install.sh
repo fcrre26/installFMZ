@@ -284,6 +284,14 @@ function generate_config() {
     
     echo "请回答以下问题来生成配置文件："
     
+    # 先生成基础配置文件
+    freqtrade new-config -c "$config_path"
+    
+    if [ ! -f "$config_path" ]; then
+        echo -e "${RED}错误: 配置文件生成失败${NC}"
+        return
+    }
+    
     # 交易所选择
     echo -e "\n${GREEN}支持的交易所:${NC}"
     echo "1) Binance (推荐)"
@@ -311,18 +319,30 @@ function generate_config() {
     read -p "请选择策略 [1]: " strategy_choice
     if [ "$strategy_choice" = "2" ]; then
         read -p "请输入策略类名: " strategy
+        # 创建新策略
+        freqtrade new-strategy --strategy "$strategy"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}错误: 策略创建失败${NC}"
+            return
+        fi
     else
         strategy="SampleStrategy"
     fi
     
-    # 生成基础配置
-    freqtrade new-config \
-        --config "$config_path" \
-        -e "$exchange" \
-        --pairs "$pairs" \
-        --strategy "$strategy"
+    # 使用 sed 命令修改配置文件
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/\"exchange\": {/\"exchange\": {\n        \"name\": \"$exchange\",/g" "$config_path"
+        sed -i '' "s/\"pair_whitelist\": \[/\"pair_whitelist\": \[\n        \"$pairs\",/g" "$config_path"
+        sed -i '' "s/\"strategy\": \"SampleStrategy\"/\"strategy\": \"$strategy\"/g" "$config_path"
+    else
+        # Linux
+        sed -i "s/\"exchange\": {/\"exchange\": {\n        \"name\": \"$exchange\",/g" "$config_path"
+        sed -i "s/\"pair_whitelist\": \[/\"pair_whitelist\": \[\n        \"$pairs\",/g" "$config_path"
+        sed -i "s/\"strategy\": \"SampleStrategy\"/\"strategy\": \"$strategy\"/g" "$config_path"
+    fi
     
-    echo -e "\n${GREEN}配置文件已生成: $config_path${NC}"
+    echo -e "\n${GREEN}配置文件已生成并更新: $config_path${NC}"
     echo "您可以手动编辑此文件来调整更多设置:"
     echo "- stake_amount: 每次交易金额"
     echo "- max_open_trades: 最大同时开仓数"
@@ -369,10 +389,11 @@ function show_run_menu() {
     echo "5) 运行回测"
     echo "6) 参数优化"
     echo "7) 下载市场数据"
+    echo "8) 启动网页界面"
     echo
     echo "0) 返回主菜单"
     echo
-    read -p "请输入选项 [0-7]: " choice
+    read -p "请输入选项 [0-8]: " choice
 
     case $choice in
         1)
@@ -421,6 +442,17 @@ function show_run_menu() {
             read -p "请输入配置文件路径 [user_data/config.json]: " config_path
             config_path=${config_path:-user_data/config.json}
             freqtrade download-data -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        8)
+            echo_block "启动网页界面"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            echo "正在启动 FreqUI..."
+            echo "请在浏览器中访问: http://localhost:8080"
+            echo "按 Ctrl+C 可以停止服务"
+            freqtrade webserver -c "$config_path"
             read -p "按回车键继续..."
             show_run_menu
             ;;
