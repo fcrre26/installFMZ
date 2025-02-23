@@ -284,6 +284,9 @@ function check_freqtrade_dir() {
 
 function generate_config() {
     echo_block "生成配置文件"
+    
+    # 不再重复检查和激活虚拟环境，因为在调用此函数前已经激活了
+    
     read -p "请输入配置文件路径 [user_data/config.json]: " config_path
     config_path=${config_path:-user_data/config.json}
     
@@ -329,12 +332,16 @@ function generate_config() {
     read -p "请选择策略 [1]: " strategy_choice
     if [ "$strategy_choice" = "2" ]; then
         read -p "请输入策略类名: " strategy
+        # 创建新策略前确保目录存在
+        mkdir -p user_data/strategies
         # 创建新策略
         freqtrade new-strategy --strategy "$strategy"
         if [ $? -ne 0 ]; then
             echo -e "${RED}错误: 策略创建失败${NC}"
-            return
+            return 1
         fi
+        echo -e "${GREEN}策略文件已创建: user_data/strategies/${strategy}.py${NC}"
+        echo "请编辑策略文件来实现您的交易逻辑"
     else
         strategy="SampleStrategy"
     fi
@@ -700,7 +707,99 @@ function show_advanced_menu() {
     echo "0) 返回主菜单"
     echo
     read -p "请输入选项 [0-6]: " choice
-    # ... 高级功能的具体实现 ...
+
+    case $choice in
+        1)
+            # 检查并切换到 freqtrade 目录
+            if [ -d "freqtrade" ]; then
+                cd freqtrade
+            elif [ "$(basename $PWD)" != "freqtrade" ]; then
+                echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+                read -p "按回车键返回..."
+                show_advanced_menu
+                return
+            fi
+
+            # 激活虚拟环境（只在这里激活一次）
+            if [ -f ".venv/bin/activate" ]; then
+                echo "正在激活虚拟环境..."
+                source .venv/bin/activate
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}错误: 虚拟环境激活失败${NC}"
+                    read -p "按回车键返回..."
+                    show_advanced_menu
+                    return
+                fi
+                echo -e "${GREEN}虚拟环境已激活${NC}"
+            else
+                echo -e "${RED}错误: 虚拟环境未找到${NC}"
+                echo "尝试重新安装..."
+                read -p "是否重新安装？[Y/n]: " reinstall
+                if [[ ! $reinstall =~ ^[Nn]$ ]]; then
+                    install
+                fi
+                read -p "按回车键返回..."
+                show_advanced_menu
+                return
+            fi
+
+            # 提供编辑选项
+            echo -e "\n${GREEN}选择编辑方式:${NC}"
+            echo "1) 使用默认编辑器 (nano)"
+            echo "2) 使用 vim"
+            echo "3) 重新生成配置"
+            echo "0) 返回"
+            read -p "请选择 [0-3]: " edit_choice
+
+            case $edit_choice in
+                1)
+                    nano user_data/config.json
+                    ;;
+                2)
+                    vim user_data/config.json
+                    ;;
+                3)
+                    generate_config  # 现在调用时已经在正确的目录且虚拟环境已激活
+                    ;;
+                0)
+                    show_advanced_menu
+                    return
+                    ;;
+                *)
+                    echo -e "${RED}无效的选项${NC}"
+                    ;;
+            esac
+            read -p "按回车键返回..."
+            show_advanced_menu
+            ;;
+        2)
+            # 命令行运行机器人
+            if [ -d "freqtrade" ]; then
+                cd freqtrade
+                source .venv/bin/activate
+                echo -e "${GREEN}可用命令:${NC}"
+                echo "freqtrade trade --config user_data/config.json"
+                read -p "按回车键返回..."
+            else
+                echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+                read -p "按回车键返回..."
+            fi
+            show_advanced_menu
+            ;;
+        3|4|5|6)
+            echo -e "${YELLOW}功能开发中...${NC}"
+            read -p "按回车键返回..."
+            show_advanced_menu
+            ;;
+        0)
+            show_menu
+            ;;
+        *)
+            echo -e "${RED}无效的选项，请重试${NC}"
+            sleep 2
+            show_advanced_menu
+            ;;
+    esac
 }
 
 function show_install_menu() {
