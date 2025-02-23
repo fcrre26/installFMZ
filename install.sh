@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #encoding=utf8
 
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'   # No Color
+
 function echo_block() {
     echo "----------------------------"
     echo $1
@@ -245,6 +251,21 @@ function install() {
         echo "等待 10 秒继续下一步安装，或使用 ctrl+c 中断。"
         sleep 10
     fi
+    
+    # 添加克隆代码仓库的步骤
+    echo_block "克隆 Freqtrade 代码仓库"
+    if [ ! -d "freqtrade" ]; then
+        git clone https://github.com/freqtrade/freqtrade.git
+        cd freqtrade
+    else
+        echo "freqtrade 目录已存在"
+        cd freqtrade
+        git fetch -a
+    fi
+
+    # 切换到稳定分支
+    git checkout stable
+
     echo
     reset
     config
@@ -266,29 +287,196 @@ function help() {
     echo "	-r,--reset      硬重置您的 develop/stable 分支"
     echo "	-c,--config     简易配置生成器（将覆盖现有文件）"
     echo "	-p,--plot       安装绘图脚本依赖"
+    echo
+    echo "提示：运行脚本时不带参数将启动交互式菜单。"
+}
+
+function show_run_menu() {
+    clear
+    echo_block "Freqtrade 运行命令菜单"
+    
+    # 检查是否在虚拟环境中
+    if [ -z "${VIRTUAL_ENV}" ]; then
+        echo -e "${RED}警告: 虚拟环境未激活!${NC}"
+        echo "请先运行: source .venv/bin/activate"
+        echo
+        read -p "按回车键返回主菜单..."
+        show_menu
+        return
+    fi
+    
+    echo -e "${GREEN}请选择要执行的命令:${NC}"
+    echo
+    echo "1) 查看版本信息"
+    echo "2) 查看帮助文档"
+    echo "3) 生成配置文件"
+    echo "4) 运行交易机器人"
+    echo "5) 运行回测"
+    echo "6) 参数优化"
+    echo "7) 下载市场数据"
+    echo
+    echo "0) 返回主菜单"
+    echo
+    read -p "请输入选项 [0-7]: " choice
+
+    case $choice in
+        1)
+            echo_block "Freqtrade 版本信息"
+            freqtrade --version
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        2)
+            echo_block "Freqtrade 帮助文档"
+            freqtrade --help
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        3)
+            echo_block "生成配置文件"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            freqtrade new-config -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        4)
+            echo_block "运行交易机器人"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            freqtrade trade -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        5)
+            echo_block "运行回测"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            freqtrade backtesting -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        6)
+            echo_block "参数优化"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            freqtrade hyperopt -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        7)
+            echo_block "下载市场数据"
+            read -p "请输入配置文件路径 [user_data/config.json]: " config_path
+            config_path=${config_path:-user_data/config.json}
+            freqtrade download-data -c "$config_path"
+            read -p "按回车键继续..."
+            show_run_menu
+            ;;
+        0)
+            show_menu
+            ;;
+        *)
+            echo -e "${RED}无效的选项，请重试${NC}"
+            sleep 2
+            show_run_menu
+            ;;
+    esac
+}
+
+function show_menu() {
+    clear
+    echo_block "Freqtrade 安装管理工具"
+    echo -e "${YELLOW}系统信息:${NC}"
+    echo "Python版本: $(${PYTHON} --version 2>&1)"
+    echo "系统类型: $(uname -s)"
+    echo "架构: $(uname -m)"
+    echo
+    echo -e "${GREEN}请选择操作:${NC}"
+    echo
+    echo "1) 从头安装 Freqtrade"
+    echo "2) 更新 Freqtrade"
+    echo "3) 重置开发/稳定分支"
+    echo "4) 生成配置文件"
+    echo "5) 安装绘图依赖"
+    echo "6) 运行命令菜单"
+    echo
+    echo "0) 退出"
+    echo
+    read -p "请输入选项 [0-6]: " choice
+    
+    case $choice in
+        1)
+            echo_block "开始安装 Freqtrade"
+            install
+            read -p "按回车键返回主菜单..."
+            show_menu
+            ;;
+        2)
+            echo_block "开始更新 Freqtrade"
+            update
+            read -p "按回车键返回主菜单..."
+            show_menu
+            ;;
+        3)
+            echo_block "开始重置分支"
+            reset
+            read -p "按回车键返回主菜单..."
+            show_menu
+            ;;
+        4)
+            echo_block "生成配置文件"
+            config
+            read -p "按回车键返回主菜单..."
+            show_menu
+            ;;
+        5)
+            echo_block "安装绘图依赖"
+            plot
+            read -p "按回车键返回主菜单..."
+            show_menu
+            ;;
+        6)
+            show_run_menu
+            ;;
+        0)
+            echo_block "感谢使用！"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}无效的选项，请重试${NC}"
+            sleep 2
+            show_menu
+            ;;
+    esac
 }
 
 # 验证是否安装了 Python 3.10+
 check_installed_python
 
-case $* in
---install|-i)
-install
-;;
---config|-c)
-config
-;;
---update|-u)
-update
-;;
---reset|-r)
-reset
-;;
---plot|-p)
-plot
-;;
-*)
-help
-;;
-esac
+# 根据命令行参数执行操作或显示菜单
+if [ $# -eq 0 ]; then
+    show_menu
+else
+    case $* in
+    --install|-i)
+        install
+        ;;
+    --config|-c)
+        config
+        ;;
+    --update|-u)
+        update
+        ;;
+    --reset|-r)
+        reset
+        ;;
+    --plot|-p)
+        plot
+        ;;
+    *)
+        help
+        ;;
+    esac
+fi
+
 exit 0
