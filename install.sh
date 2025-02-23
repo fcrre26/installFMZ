@@ -470,7 +470,7 @@ function generate_random_password() {
 function start_webui() {
     echo_block "启动网页界面"
     
-    # 自动配置防火墙（不需要确认）
+    # 自动配置防火墙
     echo "正在配置防火墙..."
     if [ "$EUID" -eq 0 ]; then
         if command -v ufw >/dev/null 2>&1; then
@@ -478,42 +478,29 @@ function start_webui() {
             ufw reload >/dev/null 2>&1
             echo -e "${GREEN}端口 8080 已自动开放${NC}"
         fi
-    else
-        echo -e "${YELLOW}提示: 需要 root 权限来配置防火墙${NC}"
     fi
 
     # 检查并切换到 freqtrade 目录
-    if [ ! -d "freqtrade" ] && [ "$(basename $PWD)" != "freqtrade" ]; then
-        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
-        echo "尝试切换到正确目录..."
-        cd freqtrade 2>/dev/null || {
-            echo -e "${RED}无法找到 freqtrade 目录${NC}"
-            return 1
-        }
-    elif [ -d "freqtrade" ]; then
+    if [ -d "freqtrade" ]; then
         cd freqtrade
+        echo "已切换到 freqtrade 目录"
+    elif [ "$(basename $PWD)" != "freqtrade" ]; then
+        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+        echo "尝试重新安装..."
+        install
+        return
     fi
     
-    # 检查虚拟环境并激活
-    if [ -f ".venv/bin/activate" ]; then
-        source .venv/bin/activate
-        
-        # 验证 freqtrade 是否可用
-        if ! command -v freqtrade >/dev/null 2>&1; then
-            echo -e "${RED}错误: freqtrade 命令未找到${NC}"
-            echo "尝试重新安装 freqtrade..."
-            python3 -m pip install -e .
-            
-            # 再次检查
-            if ! command -v freqtrade >/dev/null 2>&1; then
-                echo -e "${RED}安装失败，请尝试重新运行安装选项${NC}"
-                return 1
-            fi
-        fi
-    else
+    # 检查虚拟环境
+    if [ ! -f ".venv/bin/activate" ]; then
         echo -e "${RED}错误: 虚拟环境未找到${NC}"
-        return 1
+        echo "尝试重新安装..."
+        install
+        return
     fi
+
+    # 激活虚拟环境
+    source .venv/bin/activate
     
     # 检查策略文件
     if [ ! -f "user_data/strategies/SampleStrategy.py" ]; then
