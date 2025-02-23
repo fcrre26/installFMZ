@@ -291,18 +291,45 @@ function help() {
     echo "提示：运行脚本时不带参数将启动交互式菜单。"
 }
 
+function check_freqtrade_dir() {
+    if [ ! -d "freqtrade" ]; then
+        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+        echo "请先运行安装选项 (1) 从头安装 Freqtrade"
+        return 1
+    fi
+    
+    # 如果不在 freqtrade 目录下，则切换到该目录
+    if [ "$(basename $PWD)" != "freqtrade" ]; then
+        cd freqtrade
+        echo "已切换到 freqtrade 目录"
+    fi
+    return 0
+}
+
 function show_run_menu() {
     clear
     echo_block "Freqtrade 运行命令菜单"
     
-    # 检查是否在虚拟环境中
-    if [ -z "${VIRTUAL_ENV}" ]; then
-        echo -e "${RED}警告: 虚拟环境未激活!${NC}"
-        echo "请先运行: source .venv/bin/activate"
-        echo
+    # 首先检查 freqtrade 目录
+    check_freqtrade_dir || {
         read -p "按回车键返回主菜单..."
         show_menu
         return
+    }
+    
+    # 检查是否在虚拟环境中
+    if [ -z "${VIRTUAL_ENV}" ]; then
+        echo -e "${YELLOW}提示: 正在激活虚拟环境...${NC}"
+        if [ -f ".venv/bin/activate" ]; then
+            source .venv/bin/activate
+            echo "虚拟环境已激活"
+        else
+            echo -e "${RED}错误: 未找到虚拟环境${NC}"
+            echo "请先运行安装选项 (1) 从头安装 Freqtrade"
+            read -p "按回车键返回主菜单..."
+            show_menu
+            return
+        fi
     fi
     
     echo -e "${GREEN}请选择要执行的命令:${NC}"
