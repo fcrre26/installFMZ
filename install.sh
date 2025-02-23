@@ -491,6 +491,13 @@ function start_webui() {
         return 1
     fi
     
+    # 检查策略文件
+    if [ ! -f "user_data/strategies/SampleStrategy.py" ]; then
+        echo "正在创建示例策略..."
+        mkdir -p user_data/strategies
+        freqtrade new-strategy -s SampleStrategy
+    fi
+
     # 检查配置文件
     if [ ! -f "user_data/config.json" ]; then
         # 生成随机用户名和密码
@@ -500,6 +507,7 @@ function start_webui() {
         # 生成一个基础配置文件用于UI
         cat > "user_data/config.json" <<EOF
 {
+    "strategy": "SampleStrategy",
     "api_server": {
         "enabled": true,
         "listen_ip_address": "0.0.0.0",
@@ -569,22 +577,50 @@ function start_webui() {
 }
 EOF
         echo -e "${GREEN}已生成默认配置文件${NC}"
-        echo -e "${YELLOW}请保存以下登录信息：${NC}"
-        echo "用户名: ${random_username}"
-        echo "密码: ${random_password}"
-        echo -e "${RED}警告: 这些信息只显示一次，请务必保存！${NC}"
+        echo
+        echo "=========================================="
+        echo -e "${GREEN}登录信息 - 请保存！${NC}"
+        echo "=========================================="
+        echo -e "${YELLOW}用户名: ${GREEN}${random_username}${NC}"
+        echo -e "${YELLOW}密码: ${GREEN}${random_password}${NC}"
+        echo "=========================================="
+        echo
         
         # 保存到本地文件
         mkdir -p user_data
-        echo "用户名: ${random_username}" > user_data/login_info.txt
+        echo "=========================================" > user_data/login_info.txt
+        echo "FreqUI 登录信息" >> user_data/login_info.txt
+        echo "=========================================" >> user_data/login_info.txt
+        echo "用户名: ${random_username}" >> user_data/login_info.txt
         echo "密码: ${random_password}" >> user_data/login_info.txt
-        echo -e "${GREEN}登录信息已保存到 user_data/login_info.txt${NC}"
+        echo "=========================================" >> user_data/login_info.txt
+        echo -e "${GREEN}登录信息已保存到: ${YELLOW}user_data/login_info.txt${NC}"
+        echo
+        
+        # 等待用户确认
+        read -p "请确认您已保存登录信息 [按回车继续]..."
+    else
+        # 如果配置文件已存在，显示保存的登录信息
+        echo
+        echo "=========================================="
+        echo -e "${GREEN}已保存的登录信息${NC}"
+        echo "=========================================="
+        if [ -f "user_data/login_info.txt" ]; then
+            cat user_data/login_info.txt
+        else
+            echo -e "${RED}登录信息文件未找到！${NC}"
+            echo -e "${YELLOW}用户名和密码在 config.json 文件中${NC}"
+        fi
+        echo "=========================================="
+        echo
     fi
 
-    # 启动 UI（使用完整路径）
+    # 启动 UI
     echo -e "${GREEN}正在启动 Web UI...${NC}"
     echo -e "请在浏览器中访问: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
-    python3 -m freqtrade trade --config user_data/config.json
+    python3 -m freqtrade trade \
+        --config user_data/config.json \
+        --strategy SampleStrategy
 }
 
 function show_menu() {
