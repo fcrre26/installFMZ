@@ -282,111 +282,228 @@ function check_freqtrade_dir() {
     return 0
 }
 
+# 统一的环境检查函数
+function check_environment() {
+    # 检查 freqtrade 目录
+    if [ -d "/root/freqtrade" ]; then
+        cd /root/freqtrade
+    elif [ -d "freqtrade" ]; then
+        cd freqtrade
+    elif [ "$(basename $PWD)" != "freqtrade" ]; then
+        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+        return 1
+    fi
+
+    # 检查虚拟环境
+    if [ ! -f ".venv/bin/activate" ]; then
+        echo -e "${RED}错误: 虚拟环境未找到${NC}"
+        return 1
+    fi
+
+    # 激活虚拟环境并检查 freqtrade 命令
+    source .venv/bin/activate
+    if ! command -v freqtrade >/dev/null 2>&1; then
+        deactivate
+        echo -e "${RED}错误: freqtrade 命令未找到${NC}"
+        return 1
+    fi
+    deactivate
+
+    return 0
+}
+
 function generate_config() {
     echo_block "生成配置文件"
     
-    # 不再重复检查和激活虚拟环境，因为在调用此函数前已经激活了
+    # 确保在正确目录并检查环境
+    local current_dir=$(pwd)
+    if ! check_environment; then
+        echo -e "${RED}错误: 环境检查失败${NC}"
+        read -p "是否要安装 Freqtrade？[Y/n] " choice
+        if [[ ! $choice =~ ^[Nn]$ ]]; then
+            install_freqtrade
+            if ! check_environment; then
+                echo -e "${RED}安装失败，请检查错误信息${NC}"
+                return 1
+            fi
+        else
+            return 1
+        fi
+    fi
     
-    read -p "请输入配置文件路径 [user_data/config.json]: " config_path
-    config_path=${config_path:-user_data/config.json}
+    # 激活虚拟环境
+    source .venv/bin/activate
+    
+    # 设置默认值
+    local dry_run="false"  # 默认实盘交易
+    local stake_currency="USDT"
+    local stake_amount="unlimited"
+    local max_trades=1     # 默认最大1个仓位
+    local exchange="binance"
+    local pairs="BTC/USDT"
+    local strategy="SampleStrategy"
+    local freqtrade_path="/root/freqtrade"
+    
+    # 配置文件路径
+    local config_path="${freqtrade_path}/user_data/config.json"
+    read -p "请输入配置文件路径 [${config_path}]: " input
+    config_path=${input:-$config_path}
+    echo -e "${GREEN}已设置: 配置文件路径 = ${config_path}${NC}"
+    echo
     
     echo "请回答以下问题来生成配置文件："
+    echo "（直接回车将使用 [括号] 内的默认值）"
+    echo
     
-    # 基础设置
-    read -p "是否启用模拟交易模式？[Y/n]: " dry_run
-    dry_run=${dry_run:-"y"}
+    # 模拟交易模式
+    read -p "是否启用模拟交易模式？[N/y] (默认: 实盘交易): " input
+    if [[ $input =~ ^[Yy]$ ]]; then
+        dry_run="true"
+        echo -e "${GREEN}已设置: 模拟交易${NC}"
+    else
+        echo -e "${GREEN}已设置: 实盘交易${NC}"
+    fi
     
-    read -p "请输入交易币种 [USDT]: " stake_currency
-    stake_currency=${stake_currency:-"USDT"}
+    # 交易币种
+    read -p "请输入交易币种 [${stake_currency}]: " input
+    stake_currency=${input:-$stake_currency}
+    echo -e "${GREEN}已设置: 交易币种 = ${stake_currency}${NC}"
     
-    read -p "请输入每次交易金额（数字或'unlimited'）[unlimited]: " stake_amount
-    stake_amount=${stake_amount:-"unlimited"}
+    # 交易金额
+    read -p "请输入每次交易金额（数字或'unlimited'）[${stake_amount}]: " input
+    stake_amount=${input:-$stake_amount}
+    echo -e "${GREEN}已设置: 交易金额 = ${stake_amount}${NC}"
     
-    read -p "请输入最大同时开仓数 [3]: " max_open_trades
-    max_open_trades=${max_open_trades:-"3"}
+    # 最大开仓数
+    read -p "请输入最大同时开仓数 [${max_trades}] (默认: 1个仓位): " input
+    max_trades=${input:-$max_trades}
+    echo -e "${GREEN}已设置: 最大开仓数 = ${max_trades}${NC}"
     
     # 交易所选择
-    echo -e "\n${GREEN}支持的交易所:${NC}"
+    echo -e "\n支持的交易所:"
     echo "1) Binance (推荐)"
     echo "2) Huobi"
     echo "3) OKX"
     echo "4) 其他"
-    read -p "请选择交易所 [1]: " exchange_choice
-    case $exchange_choice in
+    read -p "请选择交易所 [1] (默认: Binance): " input
+    case $input in
         2) exchange="huobi";;
         3) exchange="okx";;
-        4) 
-            read -p "请输入交易所名称: " exchange
-            ;;
+        4) read -p "请输入交易所名称: " exchange;;
         *) exchange="binance";;
     esac
+    echo -e "${GREEN}已设置: 交易所 = ${exchange}${NC}"
+    
+    # 交易所选择后添加 API 配置
+    echo -e "${GREEN}已设置: 交易所 = ${exchange}${NC}"
+    
+    # 如果是实盘交易，提示输入 API 密钥
+    local api_key=""
+    local api_secret=""
+    if [ "$dry_run" = "false" ]; then
+        echo -e "\n${YELLOW}注意: 实盘交易需要配置交易所 API 密钥${NC}"
+        read -p "请输入 API Key: " api_key
+        read -p "请输入 API Secret: " api_secret
+        echo -e "${GREEN}已设置: API 配置${NC}"
+    fi
     
     # 交易对
-    read -p "请输入交易对(例如: BTC/USDT ETH/USDT) [BTC/USDT]: " pairs
-    pairs=${pairs:-"BTC/USDT"}
+    read -p "请输入交易对(例如: BTC/USDT ETH/USDT) [${pairs}]: " input
+    pairs=${input:-$pairs}
+    echo -e "${GREEN}已设置: 交易对 = ${pairs}${NC}"
     
     # 策略选择
-    echo -e "\n${GREEN}常用策略:${NC}"
+    echo -e "\n常用策略:"
     echo "1) SampleStrategy (样例策略)"
     echo "2) 自定义策略"
-    read -p "请选择策略 [1]: " strategy_choice
+    read -p "请选择策略 [1] (默认: 示例策略): " strategy_choice
+    
     if [ "$strategy_choice" = "2" ]; then
         read -p "请输入策略类名: " strategy
-        # 创建新策略前确保目录存在
-        mkdir -p user_data/strategies
-        # 创建新策略
-        freqtrade new-strategy --strategy "$strategy"
+        local strategy_dir="${freqtrade_path}/user_data/strategies"
+        local strategy_file="${strategy_dir}/${strategy}.py"
+        mkdir -p "$strategy_dir"
+        cp -n "${freqtrade_path}/freqtrade/templates/sample_strategy.py" "$strategy_file"
         if [ $? -ne 0 ]; then
             echo -e "${RED}错误: 策略创建失败${NC}"
             return 1
         fi
-        echo -e "${GREEN}策略文件已创建: user_data/strategies/${strategy}.py${NC}"
-        echo "请编辑策略文件来实现您的交易逻辑"
+        echo -e "${GREEN}已设置: 自定义策略 = ${strategy}${NC}"
+        echo -e "${GREEN}策略文件已创建: ${strategy_file}${NC}"
     else
         strategy="SampleStrategy"
+        echo -e "${GREEN}已设置: 使用示例策略${NC}"
     fi
+    
+    # 生成配置文件
+    echo -e "\n${GREEN}配置总结:${NC}"
+    echo "--------------------------------"
+    echo -e "${GREEN}配置文件: ${config_path}${NC}"
+    echo -e "${GREEN}交易模式: $([ "$dry_run" = "true" ] && echo "模拟交易" || echo "实盘交易")${NC}"
+    echo -e "${GREEN}交易币种: ${stake_currency}${NC}"
+    echo -e "${GREEN}交易金额: ${stake_amount}${NC}"
+    echo -e "${GREEN}最大开仓: ${max_trades}${NC}"
+    echo -e "${GREEN}交易所  : ${exchange}${NC}"
+    echo -e "${GREEN}交易对  : ${pairs}${NC}"
+    echo -e "${GREEN}策略    : ${strategy}${NC}"
+    [ "$strategy_choice" = "2" ] && echo -e "${GREEN}策略文件: ${strategy_file}${NC}"
+    echo "--------------------------------"
+    
+    # 生成随机用户名和密码
+    local username=$(generate_random_username)
+    local password=$(generate_random_password)
     
     # 生成配置文件
     cat > "$config_path" <<EOF
 {
-    "dry_run": $([ "${dry_run,,}" = "y" ] && echo "true" || echo "false"),
+    "max_open_trades": $max_trades,
     "stake_currency": "$stake_currency",
     "stake_amount": "$stake_amount",
-    "max_open_trades": $max_open_trades,
+    "tradable_balance_ratio": 0.99,
+    "dry_run": $dry_run,
+    "dry_run_wallet": 1000,
+    "fiat_display_currency": "USD",
+    "timeframe": "5m",
+    "stoploss": -0.1,
+    "minimal_roi": {
+        "60": 0.01,
+        "30": 0.02,
+        "0": 0.04
+    },
     "exchange": {
         "name": "$exchange",
-        "key": "",
-        "secret": "",
+        "key": "$api_key",
+        "secret": "$api_secret",
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
-            "$pairs"
+            $(echo "$pairs" | tr ' ' '\n' | sed 's/.*/"&",/' | sed '$s/,$//')
         ],
         "pair_blacklist": []
     },
-    "strategy": "$strategy",
-    "telegram": {
-        "enabled": false,
-        "token": "",
-        "chat_id": ""
-    },
+    "pairlists": [
+        {
+            "method": "StaticPairList",
+            "pairs": [
+                $(echo "$pairs" | tr ' ' '\n' | sed 's/.*/"&",/' | sed '$s/,$//')
+            ]
+        }
+    ],
     "api_server": {
         "enabled": true,
         "listen_ip_address": "0.0.0.0",
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": true,
-        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
+        "jwt_secret_key": "$(openssl rand -hex 32)",
         "CORS_origins": [],
-        "username": "${random_username}",
-        "password": "${random_password}",
-        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 64)",
-        "ws_token": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)"
+        "username": "$username",
+        "password": "$password"
     }
 }
 EOF
     
-    echo -e "\n${GREEN}配置文件已生成: $config_path${NC}"
+    echo -e "\n配置文件已生成: ${config_path}"
     echo "您可以手动编辑此文件来调整更多设置:"
     echo "- stake_amount: 每次交易金额（数字或'unlimited'）"
     echo "- max_open_trades: 最大同时开仓数"
@@ -395,11 +512,14 @@ EOF
     echo "- dry_run: 模拟交易模式"
     echo "- exchange.key: API密钥"
     echo "- exchange.secret: API密钥"
-    echo "- telegram: 电报机器人设置"
     echo "- api_server: API服务器设置（用于网页界面）"
     echo "  * username: 登录用户名"
     echo "  * password: 登录密码"
     echo "  * jwt_secret_key: JWT密钥"
+    echo
+    echo "提示: 使用您喜欢的编辑器修改配置文件，例如:"
+    echo "nano ${config_path}"
+    echo "vim ${config_path}"
 }
 
 function configure_firewall() {
@@ -477,179 +597,96 @@ function generate_random_password() {
 function start_webui() {
     echo_block "启动网页界面"
     
-    # 自动配置防火墙
-    echo "正在配置防火墙..."
-    if [ "$EUID" -eq 0 ]; then
-        if command -v ufw >/dev/null 2>&1; then
-            ufw allow 8080/tcp >/dev/null 2>&1
-            ufw reload >/dev/null 2>&1
-            echo -e "${GREEN}端口 8080 已自动开放${NC}"
-        fi
-    fi
-
-    # 检查并切换到 freqtrade 目录
-    if [ -d "freqtrade" ]; then
-        cd freqtrade
-        echo "已切换到 freqtrade 目录"
-    elif [ "$(basename $PWD)" != "freqtrade" ]; then
-        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
-        echo "尝试重新安装..."
-        install
-        return
-    fi
-    
-    # 检查虚拟环境
-    if [ ! -f ".venv/bin/activate" ]; then
-        echo -e "${RED}错误: 虚拟环境未找到${NC}"
-        echo "尝试重新安装..."
-        install
-        return
-    fi
-
-    # 激活虚拟环境
-    source .venv/bin/activate
-    
-    # 检查策略文件
-    if [ ! -f "user_data/strategies/SampleStrategy.py" ]; then
-        echo "正在创建示例策略..."
-        mkdir -p user_data/strategies
-        freqtrade new-strategy -s SampleStrategy
-    fi
-
-    # 检查配置文件
-    if [ ! -f "user_data/config.json" ]; then
-        # 每次都生成新的随机用户名和密码
-        local random_username=$(generate_random_username)
-        local random_password=$(generate_random_password)
-        
-        # 生成配置文件
-        cat > "user_data/config.json" <<EOF
-{
-    "strategy": "SampleStrategy",
-    "api_server": {
-        "enabled": true,
-        "listen_ip_address": "0.0.0.0",
-        "listen_port": 8080,
-        "verbosity": "error",
-        "enable_openapi": true,
-        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
-        "CORS_origins": [],
-        "username": "${random_username}",
-        "password": "${random_password}",
-        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 64)",
-        "ws_token": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)"
-    },
-    "bot_name": "freqtrade",
-    "dry_run": true,
-    "max_open_trades": 3,
-    "stake_currency": "USDT",
-    "stake_amount": "unlimited",
-    "tradable_balance_ratio": 0.99,
-    "fiat_display_currency": "USD",
-    "timeframe": "5m",
-    "dry_run_wallet": 1000,
-    "cancel_open_orders_on_exit": false,
-    "trading_mode": "spot",
-    "margin_mode": "",
-    "unfilledtimeout": {
-        "entry": 10,
-        "exit": 10,
-        "exit_timeout_count": 0,
-        "unit": "minutes"
-    },
-    "entry_pricing": {
-        "price_side": "same",
-        "use_order_book": true,
-        "order_book_top": 1,
-        "price_last_balance": 0.0,
-        "check_depth_of_market": {
-            "enabled": false,
-            "bids_to_ask_delta": 1
-        }
-    },
-    "exit_pricing": {
-        "price_side": "same",
-        "use_order_book": true,
-        "order_book_top": 1
-    },
-    "exchange": {
-        "name": "binance",
-        "key": "",
-        "secret": "",
-        "ccxt_config": {},
-        "ccxt_async_config": {},
-        "pair_whitelist": [
-            "BTC/USDT",
-            "ETH/USDT"
-        ],
-        "pair_blacklist": []
-    },
-    "pairlists": [
-        {
-            "method": "StaticPairList"
-        }
-    ],
-    "telegram": {
-        "enabled": false,
-        "token": "",
-        "chat_id": ""
-    }
-}
-EOF
-        echo -e "${GREEN}已生成默认配置文件${NC}"
-        echo
-        echo "=========================================="
-        echo -e "${GREEN}FreqUI 登录信息 - 请保存！${NC}"
-        echo "=========================================="
-        echo -e "${YELLOW}登录地址: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
-        echo -e "${YELLOW}用户名: ${GREEN}${random_username}${NC}"
-        echo -e "${YELLOW}密码: ${GREEN}${random_password}${NC}"
-        echo "=========================================="
-        echo
-        
-        # 保存到本地文件
-        mkdir -p user_data
-        echo "=========================================" > user_data/login_info.txt
-        echo "FreqUI 登录信息" >> user_data/login_info.txt
-        echo "=========================================" >> user_data/login_info.txt
-        echo "登录地址: http://$(curl -s ifconfig.me):8080" >> user_data/login_info.txt
-        echo "用户名: ${random_username}" >> user_data/login_info.txt
-        echo "密码: ${random_password}" >> user_data/login_info.txt
-        echo "=========================================" >> user_data/login_info.txt
-        echo -e "${GREEN}登录信息已保存到: ${YELLOW}user_data/login_info.txt${NC}"
-        echo
-        
-        # 等待用户确认
-        read -p "请确认您已保存登录信息 [按回车继续]..."
-    else
-        # 如果配置文件已存在，显示保存的登录信息
-        echo
-        echo "=========================================="
-        echo -e "${GREEN}已保存的登录信息${NC}"
-        echo "=========================================="
-        if [ -f "user_data/login_info.txt" ]; then
-            echo
-            echo "=========================================="
-            echo -e "${GREEN}登录信息${NC}"
-            echo "=========================================="
-            echo -e "${YELLOW}访问地址: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
-            cat user_data/login_info.txt | grep -v "========="
-            echo "=========================================="
-            echo
+    # 确保在正确目录并检查环境
+    if ! check_environment; then
+        echo -e "${RED}错误: 环境检查失败${NC}"
+        read -p "是否要安装 Freqtrade？[Y/n] " choice
+        if [[ ! $choice =~ ^[Nn]$ ]]; then
+            install_freqtrade
+            if ! check_environment; then
+                echo -e "${RED}安装失败，请检查错误信息${NC}"
+                return 1
+            fi
         else
-            echo -e "${RED}登录信息文件未找到！${NC}"
-            echo -e "${YELLOW}用户名和密码在 config.json 文件中${NC}"
+            return 1
         fi
-        echo "=========================================="
-        echo
     fi
 
-    # 启动 UI（删除端口确认步骤）
+    # 配置防火墙
+    echo "正在配置防火墙..."
+    configure_firewall
+    
+    # 检查配置文件
+    local config_file="/root/freqtrade/user_data/config.json"
+    if [ ! -f "$config_file" ]; then
+        echo "配置文件不存在，正在创建..."
+        generate_config
+    fi
+
+    # 检查配置文件中的交易模式
+    if ! grep -q '"dry_run": true' "$config_file"; then
+        echo -e "\n${YELLOW}警告: 当前为实盘交易模式${NC}"
+        if ! grep -q '"key": "[^"]\+"' "$config_file"; then
+            echo -e "${RED}错误: 未配置交易所 API 密钥${NC}"
+            read -p "是否现在配置 API 密钥？[Y/n] " choice
+            if [[ ! $choice =~ ^[Nn]$ ]]; then
+                generate_config
+            else
+                echo -e "${YELLOW}将以模拟交易模式启动${NC}"
+                # 临时修改配置为模拟交易
+                sed -i 's/"dry_run": false/"dry_run": true/' "$config_file"
+            fi
+        fi
+    fi
+
+    # 生成登录信息
+    local username=$(generate_random_username)
+    local password=$(generate_random_password)
+    
+    # 更新配置文件中的用户名和密码
+    if [ -f "$config_file" ]; then
+        sed -i "s/\"username\": \"[^\"]*\"/\"username\": \"$username\"/" "$config_file"
+        sed -i "s/\"password\": \"[^\"]*\"/\"password\": \"$password\"/" "$config_file"
+    fi
+    
+    echo -e "\n=========================================="
+    echo "FreqUI 登录信息"
+    echo "=========================================="
+    echo "登录地址: http://$(curl -s ifconfig.me):8080"
+    echo "用户名: ${username}"
+    echo "密码: ${password}"
+    echo "=========================================="
+    
+    # 保存登录信息
+    mkdir -p user_data
+    cat > user_data/login_info.txt <<EOF
+==========================================
+FreqUI 登录信息
+登录地址: http://$(curl -s ifconfig.me):8080
+用户名: ${username}
+密码: ${password}
+==========================================
+EOF
+    
+    echo -e "\n登录信息已保存到: user_data/login_info.txt"
+    read -p "请确认您已保存登录信息 [按回车继续]..."
+    
+    # 启动 UI
     echo -e "${GREEN}正在启动 Web UI...${NC}"
     echo -e "请在浏览器中访问: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
-    python3 -m freqtrade trade \
+    
+    # 激活虚拟环境并启动
+    cd /root/freqtrade
+    source .venv/bin/activate
+    
+    # 使用完整路径启动
+    .venv/bin/freqtrade trade \
         --config user_data/config.json \
-        --strategy SampleStrategy
+        --strategy SampleStrategy \
+        --db-url sqlite:///user_data/tradesv3.sqlite
+    
+    # 退出虚拟环境
+    deactivate
 }
 
 function show_menu() {
