@@ -244,6 +244,11 @@ function install() {
     echo "现在您可以通过执行 'source .venv/bin/activate; freqtrade <子命令>' 来使用机器人。"
     echo "您可以通过执行 'source .venv/bin/activate; freqtrade --help' 查看可用的机器人子命令列表。"
     echo "您可以通过运行 'source .venv/bin/activate; freqtrade --version' 验证 freqtrade 是否安装成功。"
+    
+    # 等待用户确认
+    echo
+    read -p "安装完成！按回车键返回主菜单..."
+    show_menu
 }
 
 function plot() {
@@ -364,10 +369,12 @@ function generate_config() {
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": true,
-        "jwt_secret_key": "请更改这个密钥",
+        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
         "CORS_origins": [],
-        "username": "freqtrader",
-        "password": "请更改这个密码"
+        "username": "${random_username}",
+        "password": "${random_password}",
+        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 64)",
+        "ws_token": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)"
     }
 }
 EOF
@@ -448,11 +455,16 @@ function configure_firewall() {
     echo "请手动确保端口 $port 已开放"
 }
 
+function generate_random_username() {
+    # 生成8位随机用户名，只包含小写字母和数字
+    echo "user_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 8)"
+}
+
 function generate_random_password() {
     # 生成16位随机密码，包含大小写字母、数字和特殊字符
     local length=16
     local chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*'
-    echo $(tr -dc "$chars" < /dev/urandom | head -c $length)
+    tr -dc "$chars" < /dev/urandom | head -c $length
 }
 
 function start_webui() {
@@ -512,11 +524,11 @@ function start_webui() {
 
     # 检查配置文件
     if [ ! -f "user_data/config.json" ]; then
-        # 生成随机用户名和密码
-        local random_username="user_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 8)"
+        # 每次都生成新的随机用户名和密码
+        local random_username=$(generate_random_username)
         local random_password=$(generate_random_password)
         
-        # 生成一个基础配置文件用于UI
+        # 生成配置文件
         cat > "user_data/config.json" <<EOF
 {
     "strategy": "SampleStrategy",
@@ -529,7 +541,9 @@ function start_webui() {
         "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
         "CORS_origins": [],
         "username": "${random_username}",
-        "password": "${random_password}"
+        "password": "${random_password}",
+        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 64)",
+        "ws_token": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)"
     },
     "bot_name": "freqtrade",
     "dry_run": true,
@@ -591,8 +605,9 @@ EOF
         echo -e "${GREEN}已生成默认配置文件${NC}"
         echo
         echo "=========================================="
-        echo -e "${GREEN}登录信息 - 请保存！${NC}"
+        echo -e "${GREEN}FreqUI 登录信息 - 请保存！${NC}"
         echo "=========================================="
+        echo -e "${YELLOW}登录地址: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
         echo -e "${YELLOW}用户名: ${GREEN}${random_username}${NC}"
         echo -e "${YELLOW}密码: ${GREEN}${random_password}${NC}"
         echo "=========================================="
@@ -603,6 +618,7 @@ EOF
         echo "=========================================" > user_data/login_info.txt
         echo "FreqUI 登录信息" >> user_data/login_info.txt
         echo "=========================================" >> user_data/login_info.txt
+        echo "登录地址: http://$(curl -s ifconfig.me):8080" >> user_data/login_info.txt
         echo "用户名: ${random_username}" >> user_data/login_info.txt
         echo "密码: ${random_password}" >> user_data/login_info.txt
         echo "=========================================" >> user_data/login_info.txt
@@ -714,19 +730,24 @@ function show_install_menu() {
     read -p "请输入选项 [0-4]: " choice
 
     case $choice in
-        1)
-            REQUIREMENTS=requirements.txt
+        1|2)
+            if [ "$choice" -eq 1 ]; then
+                REQUIREMENTS=requirements.txt
+            else
+                REQUIREMENTS=requirements-dev.txt
+            fi
             install
-            ;;
-        2)
-            REQUIREMENTS=requirements-dev.txt
-            install
+            # 不需要额外的 show_menu，因为 install 函数会处理
             ;;
         3)
             update
+            read -p "更新完成！按回车键返回主菜单..."
+            show_menu
             ;;
         4)
             reset
+            read -p "重置完成！按回车键返回主菜单..."
+            show_menu
             ;;
         0)
             show_menu
