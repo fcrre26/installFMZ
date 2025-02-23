@@ -396,7 +396,7 @@ function configure_firewall() {
     if [ "$EUID" -ne 0 ]; then
         echo -e "${YELLOW}提示: 配置防火墙需要root权限${NC}"
         return
-    }
+    fi
 
     # 检查并配置 UFW (Ubuntu/Debian)
     if command -v ufw >/dev/null 2>&1; then
@@ -458,26 +458,40 @@ function generate_random_password() {
 function start_webui() {
     echo_block "启动网页界面"
     
-    # 检查是否已安装 Freqtrade
-    if ! command -v freqtrade &> /dev/null; then
-        echo -e "${RED}错误: 未找到 freqtrade 命令${NC}"
-        echo "请先选择选项 1) 安装/更新 来安装 Freqtrade"
-        read -p "是否现在安装？[Y/n]: " install_now
-        if [[ ! $install_now =~ ^[Nn]$ ]]; then
-            show_install_menu
-            return
+    # 检查并切换到 freqtrade 目录
+    if [ ! -d "freqtrade" ] && [ "$(basename $PWD)" != "freqtrade" ]; then
+        echo -e "${RED}错误: 未找到 freqtrade 目录${NC}"
+        echo "尝试切换到正确目录..."
+        cd freqtrade 2>/dev/null || {
+            echo -e "${RED}无法找到 freqtrade 目录${NC}"
+            return 1
+        }
+    elif [ -d "freqtrade" ]; then
+        cd freqtrade
+    fi
+    
+    # 检查虚拟环境并激活
+    if [ -f ".venv/bin/activate" ]; then
+        source .venv/bin/activate
+        
+        # 验证 freqtrade 是否可用
+        if ! command -v freqtrade >/dev/null 2>&1; then
+            echo -e "${RED}错误: freqtrade 命令未找到${NC}"
+            echo "尝试重新安装 freqtrade..."
+            python3 -m pip install -e .
+            
+            # 再次检查
+            if ! command -v freqtrade >/dev/null 2>&1; then
+                echo -e "${RED}安装失败，请尝试重新运行安装选项${NC}"
+                return 1
+            fi
         fi
-        read -p "按回车键返回主菜单..."
-        show_menu
-        return
+    else
+        echo -e "${RED}错误: 虚拟环境未找到${NC}"
+        return 1
     fi
     
-    # 检查并创建 user_data 目录
-    if [ ! -d "user_data" ]; then
-        mkdir -p user_data
-    fi
-    
-    # 检查配置文件是否存在
+    # 检查配置文件
     if [ ! -f "user_data/config.json" ]; then
         # 生成随机用户名和密码
         local random_username="user_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 8)"
@@ -486,12 +500,24 @@ function start_webui() {
         # 生成一个基础配置文件用于UI
         cat > "user_data/config.json" <<EOF
 {
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": true,
+        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
+        "CORS_origins": [],
+        "username": "${random_username}",
+        "password": "${random_password}"
+    },
+    "bot_name": "freqtrade",
+    "dry_run": true,
     "max_open_trades": 3,
     "stake_currency": "USDT",
     "stake_amount": "unlimited",
     "tradable_balance_ratio": 0.99,
     "fiat_display_currency": "USD",
-    "dry_run": true,
     "timeframe": "5m",
     "dry_run_wallet": 1000,
     "cancel_open_orders_on_exit": false,
@@ -525,7 +551,8 @@ function start_webui() {
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
-            "BTC/USDT"
+            "BTC/USDT",
+            "ETH/USDT"
         ],
         "pair_blacklist": []
     },
@@ -538,23 +565,6 @@ function start_webui() {
         "enabled": false,
         "token": "",
         "chat_id": ""
-    },
-    "api_server": {
-        "enabled": true,
-        "listen_ip_address": "0.0.0.0",
-        "listen_port": 8080,
-        "verbosity": "error",
-        "enable_openapi": true,
-        "jwt_secret_key": "$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)",
-        "CORS_origins": [],
-        "username": "${random_username}",
-        "password": "${random_password}"
-    },
-    "bot_name": "freqtrade",
-    "initial_state": "running",
-    "force_entry_enable": false,
-    "internals": {
-        "process_throttle_secs": 5
     }
 }
 EOF
@@ -564,50 +574,17 @@ EOF
         echo "密码: ${random_password}"
         echo -e "${RED}警告: 这些信息只显示一次，请务必保存！${NC}"
         
-        # 保存到本地文件（可选）
+        # 保存到本地文件
+        mkdir -p user_data
         echo "用户名: ${random_username}" > user_data/login_info.txt
         echo "密码: ${random_password}" >> user_data/login_info.txt
         echo -e "${GREEN}登录信息已保存到 user_data/login_info.txt${NC}"
     fi
 
-    # 确保在正确的目录中
-    check_freqtrade_dir || return
-
-    # 确保虚拟环境已激活
-    if [ -z "${VIRTUAL_ENV}" ]; then
-        if [ -f ".venv/bin/activate" ]; then
-            source .venv/bin/activate
-            echo "已激活虚拟环境"
-        else
-            echo -e "${RED}错误: 未找到虚拟环境${NC}"
-            echo "请先完成安装"
-            read -p "按回车键返回主菜单..."
-            show_menu
-            return
-        fi
-    fi
-
-    # 配置防火墙（在启动服务之前）
-    configure_firewall
-    
-    echo
-    echo "正在启动 FreqUI..."
-    echo -e "${GREEN}请在浏览器中访问: http://$(curl -s ifconfig.me):8080${NC}"
-    echo "使用以下信息登录:"
-    echo "用户名: $(grep -o '"username": "[^"]*' user_data/config.json | cut -d'"' -f4)"
-    echo "密码: $(grep -o '"password": "[^"]*' user_data/config.json | cut -d'"' -f4)"
-    echo
-    echo "在网页界面中，您可以:"
-    echo "1. 配置交易所API"
-    echo "2. 选择交易对"
-    echo "3. 设置交易策略"
-    echo "4. 查看交易历史"
-    echo "5. 监控机器人状态"
-    echo "6. 执行回测"
-    echo
-    echo "按 Ctrl+C 可以停止服务"
-    
-    freqtrade webserver -c user_data/config.json
+    # 启动 UI（使用完整路径）
+    echo -e "${GREEN}正在启动 Web UI...${NC}"
+    echo -e "请在浏览器中访问: ${GREEN}http://$(curl -s ifconfig.me):8080${NC}"
+    python3 -m freqtrade trade --config user_data/config.json
 }
 
 function show_menu() {
